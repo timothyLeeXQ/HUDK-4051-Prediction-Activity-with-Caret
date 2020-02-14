@@ -1,0 +1,172 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Prediction Activity
+
+A mini-prediction competition. Who can produce the best model to predict pass/fail
+
+```{r message = FALSE}
+#install.packages('caret')
+library(caret)
+library(tidyverse)
+```
+
+
+### Download
+
+* Download the Open University Learning Analytics dataset from [here](https://analyse.kmi.open.ac.uk/open_dataset)
+* Import the `studentVle.csv`, `studentAssessment.csv` and `studentInfo.csv` files into R
+
+```{r message = FALSE}
+vle <- read_csv("data/studentVle.csv")
+assessment <- read_csv("data/studentAssessment.csv")
+info <- read_csv("data/studentInfo.csv")
+```
+
+
+### Wrangling
+
+* Calculate the average daily number of clicks (site interactions) for each student from the `studentVle` dataset
+
+```{r}
+vle_clicks_mean <- vle %>% 
+  group_by(.data$id_student, date) %>% 
+  summarise(sum_clicks = sum(.data$sum_click, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(.data$id_student) %>%
+  summarise(mean_clicks = mean(.data$sum_clicks, na.rm = TRUE))
+```
+
+
+* Calculate the average assessment score for each student from the `studentAssessment` dataset
+
+```{r}
+assessment_score_mean <- assessment %>%
+  group_by(.data$id_student) %>%
+  summarise(mean_score = mean(.data$score, na.rm = TRUE))
+```
+
+
+* Merge your click and assessment score average values into the `studentInfo` dataset
+
+```{r}
+joined_data <- left_join(info, vle_clicks_mean, by = "id_student") %>%
+  left_join(assessment_score_mean, by = "id_student")
+```
+
+
+### Create a Validation Set
+
+* Split your data into two new datasets, `TRAINING` and `TEST`, by **randomly** selecting 25% of the students for the `TEST` set
+
+```{r}
+partition_index <- createDataPartition(joined_data$final_result,
+                                       p = 0.75,
+                                       list = FALSE
+                                       )
+
+TRAINING <- joined_data[partition_index,]
+TEST <- joined_data[-partition_index,]
+```
+
+
+### Explore
+
+* Generate summary statistics for the variable `final_result`
+
+```{r}
+table(joined_data$final_result)
+anyNA(joined_data$final_result)
+```
+
+
+* Ensure that the final_result variable is binary (Remove all students who withdrew from a courses and convert all students who recieved distinctions to pass)
+
+```{r}
+joined_data <- filter(joined_data, .data$final_result != "Withdrawn")
+
+joined_data["final_result"] <- ifelse(joined_data$final_result == "Fail", "fail", "pass")
+```
+
+```{r}
+table(joined_data$final_result)
+anyNA(joined_data$final_result)
+```
+
+* Visualize the distributions of each of the variables for insight
+
+```{r}
+categorical_data <- joined_data %>%
+  select(.data$id_student,
+         .data$code_module,
+         .data$code_presentation,
+         .data$gender,
+         .data$region,
+         .data$highest_education,
+         .data$imd_band,
+         .data$age_band,
+         .data$num_of_prev_attempts,
+         .data$disability,
+         .data$final_result,
+         ) %>%
+  mutate(num_of_prev_attempts = as.character(.data$num_of_prev_attempts))
+  
+continuous_data <- joined_data %>%
+  select(.data$id_student,
+         .data$studied_credits,
+         .data$mean_clicks,
+         .data$mean_score)
+
+
+```
+
+```{r}
+categorical_data_long <- pivot_longer(categorical_data,
+                                      cols = -.data$id_student,
+                                      names_to = "variables",
+                                      values_to = "values",
+                                      )
+
+ggplot(categorical_data_long, aes(x = .data$values)) + geom_bar() + facet_wrap(~variables, scales = "free")
+```
+
+```{r}
+continuous_data_long <- pivot_longer(continuous_data,
+                                      cols = -.data$id_student,
+                                      names_to = "variables",
+                                      values_to = "values",
+                                      )
+
+#Individual plots to adjust bin width, then grid them together
+p1 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free_x")
+p2 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free")
+p3 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free")
+```
+
+* Visualize relationships between variables for insight
+
+```{r}
+
+```
+
+
+### Model Training
+
+* Install the `caret` package
+* You will be allocated one of the following models to test:
+
+  CART (`RPART`), Conditional Inference Trees (`party`), Naive Bayes (`naivebayes`), Logistic Regression (`gpls`)
+
+* Using the `trainControl` command in the `caret` package create a 10-fold cross-validation harness:   
+  `control <- trainControl(method="cv", number=10)`
+* Using the standard caret syntax fit your model and measure accuracy:  
+   `fit <- train(final_result~., data=TRAINING, method=YOUR MODEL, metric="accuracy", trControl=control)`
+* Generate a summary of your results and create a visualization of the accuracy scores for your ten trials
+* Make any tweaks to your model to try to improve its performance
+### Model Testing
+* Use the `predict` function to test your model  
+  `predictions <- predict(fit, TEST)`
+* Generate a confusion matrix for your model test  
+  `confusionMatrix(predictions, TEST$final_result)`

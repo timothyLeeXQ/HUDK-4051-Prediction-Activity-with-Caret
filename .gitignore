@@ -1,0 +1,10 @@
+#Data
+data/
+
+#R files
+.Rproj
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+prediction-activity.Rproj
