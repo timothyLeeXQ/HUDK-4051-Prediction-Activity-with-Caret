@@ -11,6 +11,7 @@ A mini-prediction competition. Who can produce the best model to predict pass/fa
 #install.packages('caret')
 library(caret)
 library(tidyverse)
+library(GGally)
 ```
 
 
@@ -20,9 +21,9 @@ library(tidyverse)
 * Import the `studentVle.csv`, `studentAssessment.csv` and `studentInfo.csv` files into R
 
 ```{r message = FALSE}
-vle <- read_csv("data/studentVle.csv")
-assessment <- read_csv("data/studentAssessment.csv")
-info <- read_csv("data/studentInfo.csv")
+vle <- read.csv("data/studentVle.csv")
+assessment <- read.csv("data/studentAssessment.csv")
+info <- read.csv("data/studentInfo.csv")
 ```
 
 
@@ -57,21 +58,6 @@ joined_data <- left_join(info, vle_clicks_mean, by = "id_student") %>%
 ```
 
 
-### Create a Validation Set
-
-* Split your data into two new datasets, `TRAINING` and `TEST`, by **randomly** selecting 25% of the students for the `TEST` set
-
-```{r}
-partition_index <- createDataPartition(joined_data$final_result,
-                                       p = 0.75,
-                                       list = FALSE
-                                       )
-
-TRAINING <- joined_data[partition_index,]
-TEST <- joined_data[-partition_index,]
-```
-
-
 ### Explore
 
 * Generate summary statistics for the variable `final_result`
@@ -81,18 +67,23 @@ table(joined_data$final_result)
 anyNA(joined_data$final_result)
 ```
 
-
 * Ensure that the final_result variable is binary (Remove all students who withdrew from a courses and convert all students who recieved distinctions to pass)
 
 ```{r}
 joined_data <- filter(joined_data, .data$final_result != "Withdrawn")
 
 joined_data["final_result"] <- ifelse(joined_data$final_result == "Fail", "fail", "pass")
+joined_data <- joined_data %>%
+  mutate(final_result = as.factor(joined_data$final_result))
+
+table(joined_data$final_result)
 ```
 
 ```{r}
-table(joined_data$final_result)
-anyNA(joined_data$final_result)
+# Check for missing data
+map_lgl(joined_data, anyNA)
+
+#There is missing data, but will be dealt with in the rpart fit (see below)
 ```
 
 * Visualize the distributions of each of the variables for insight
@@ -140,17 +131,31 @@ continuous_data_long <- pivot_longer(continuous_data,
                                       )
 
 #Individual plots to adjust bin width, then grid them together
-p1 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free_x")
-p2 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free")
-p3 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free")
+ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + facet_wrap(~variables, scales = "free", ncol = 2)
+
 ```
 
 * Visualize relationships between variables for insight
 
-```{r}
-
+```{r message = FALSE, warning = FALSE, fig.width = 15, fig.height = 15}
+joined_data %>% 
+  select(-id_student) %>%
+  ggpairs()
 ```
 
+### Create a Validation Set
+
+* Split your data into two new datasets, `TRAINING` and `TEST`, by **randomly** selecting 25% of the students for the `TEST` set
+
+```{r}
+partition_index <- createDataPartition(joined_data$final_result,
+                                       p = 0.75,
+                                       list = FALSE
+                                       )
+
+TRAINING <- joined_data[partition_index,]
+TEST <- joined_data[-partition_index,]
+```
 
 ### Model Training
 
@@ -161,12 +166,78 @@ p3 <- ggplot(continuous_data_long, aes(x = .data$values)) + geom_histogram() + f
 
 * Using the `trainControl` command in the `caret` package create a 10-fold cross-validation harness:   
   `control <- trainControl(method="cv", number=10)`
+
+```{r}
+control <- trainControl(method = "cv", number = 10)
+```
+
+```{r}
+TRAINING <- select(TRAINING, -.data$id_student)
+TEST <- select(TEST, -.data$id_student)
+```
+
+
 * Using the standard caret syntax fit your model and measure accuracy:  
    `fit <- train(final_result~., data=TRAINING, method=YOUR MODEL, metric="accuracy", trControl=control)`
+   
+```{r}
+# The original data has missing values that have not been addressed. However,
+# rpart handles missing data on its own - see https://bit.ly/2HnW0Wa and 
+# https://bit.ly/39AQ8Vv for explanation of how it does this using surrogate
+# splits.
+
+# Using surrogate splits is not elegant, but is more conservative than 
+# filling in missing values (particularly for imd_band, which I don't even
+# understand), so I'm letting that happen for now...
+
+set.seed(1234)
+fit <- train(final_result ~ .,
+             data = TRAINING,
+             method = "rpart",
+             preProcess = c("center", "scale"),
+             metric = "Accuracy",
+             trControl = control,
+             na.action = na.pass
+             )
+```
+  
 * Generate a summary of your results and create a visualization of the accuracy scores for your ten trials
-* Make any tweaks to your model to try to improve its performance
+
+```{r}
+fit$resample
+
+ggplot(fit$resample, aes(x = Resample, y = Accuracy)) +
+  geom_col() +
+  coord_cartesian(ylim = c(0.70, 0.80))
+
+ggplot(fit$resample, aes(x = Resample, y = Kappa)) +
+  geom_col() +
+  coord_cartesian(ylim = c(0.20, 0.40))
+
+```
+
 ### Model Testing
 * Use the `predict` function to test your model  
   `predictions <- predict(fit, TEST)`
 * Generate a confusion matrix for your model test  
   `confusionMatrix(predictions, TEST$final_result)`
+
+```{r}
+predictions <- predict(fit, newdata = TEST, na.action = na.pass)
+confusionMatrix(predictions, reference = TEST$final_result)
+```
+
+
+* Make any tweaks to your model to try to improve its performance
+
+```{r}
+# 3 things that may want to try: 
+# Try grouping highest education into a binary variable - university or not,
+# or A levels or not
+
+# Could also try recoding the NA values as mean values and seeing if that
+# improves performance over using the surrogate splits
+
+# Try removing code presentation which may be noise - when you do the 
+# module should not affect how well you do it
+```
