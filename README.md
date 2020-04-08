@@ -1,5 +1,24 @@
 # Prediction Activity
 
+This repo contains files for an in-class activity for HUDK 4051: Learning Analytics: Process and Theory. The activity is aimed at familiarising students with caret, which simplifies the process for, and provides a common syntax for creating predictive models in R.
+
+HUDK 4051 is the second of three core courses in the Learning Analytics MS at
+Teachers College, Columbia University focusing on the thinking, methods, and
+conventions in data science. Particular attention is given to the fields of
+Educational Data Mining and Learning Analytics. Refer to the
+[Syllabus](https://github.com/timothyLeeXQ/HUDK-4051-Syllabus) (forked from
+the [main repo](https://github.com/la-process-and-theory/syllabus) which may
+contain updates for future class iterations) for more information on HUDK 4051.
+
+Other classes in the series are:
+* [HUDK 4050: Core Methods in Educational Data
+Mining](https://github.com/timothyLeeXQ/HUDK-4050-Syllabus)
+([Main repo](https://github.com/core-methods-in-edm/syllabus))
+* HUDK 5053: Feature Engineering Studio (Starting in May 2020.
+ [Main repo](https://github.com/feature-engineering-studio/syllabus))
+
+## Instructor Notes
+
 A mini-prediction competition. Who can produce the best model to predict pass/fail
 
 ### Download
